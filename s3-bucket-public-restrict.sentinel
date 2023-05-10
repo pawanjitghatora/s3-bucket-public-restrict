@@ -1,13 +1,21 @@
-# Ensure S3 buckets don't have public access enabled
-import "tfplan"
+import "tfplan/v2" as tfplan
 
-# Define a rule to check for public access in S3 bucket policies
-public_access {
-  # Loop through all S3 bucket resources in the plan
-  for_each = tfplan.module.aws_s3_bucket.aws_s3_bucket
-  bucket_policy = each.value.resource_changes[0].change.after.policy
+//find all aws_s3_bucket that has acl="public-read-write"
+violatingS3Buckets = filter tfplan.resource_changes as _, rc {
+	rc.type is "aws_s3_bucket" and
+		rc.mode is "managed" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update") and
+		rc.change.after.acl in ["public-read-write"]
+}
 
-  # Check for public access in the bucket policy
-  public_access_statement = jsondecode(bucket_policy).Statement[0]
-  public_access_statement.Effect == "Allow" and contains(public_access_statement.Principal.AWS, "*")
+//print out adress for non-compliant bucket
+for violatingS3Buckets as address, bucket {
+	print(address + "'s acl is : " + bucket.change.after.acl + ", this is not compliant.")
+}
+
+//debug code
+// print(violatingS3Buckets)
+
+main = rule {
+	length(violatingS3Buckets) == 0
 }
